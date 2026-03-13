@@ -1,0 +1,99 @@
+# Village Health Monitoring System — Backend Walkthrough
+
+## What Was Built
+
+A complete, production-ready **Node.js + Express** REST API in the `backend/` directory.
+
+---
+
+## Directory Structure Created
+
+```
+backend/
+├── config/
+│   └── db.js                   ← MongoDB Atlas connection
+├── controllers/
+│   ├── authController.js       ← Register / Login
+│   ├── studentController.js    ← Get assigned houses
+│   ├── visitController.js      ← GPS distance verification
+│   ├── patientController.js    ← Submit record + ML risk call
+│   └── adminController.js      ← Upload students/houses, run clustering
+├── middleware/
+│   ├── auth.js                 ← JWT protect + adminOnly gates
+│   ├── validate.js             ← Input validation helpers
+│   └── upload.js               ← Multer (image type + 5MB limit)
+├── models/
+│   ├── User.js                 ← Student/Admin (bcrypt pre-save)
+│   ├── House.js                ← Address, coords, riskLevel
+│   ├── PatientRecord.js        ← Visit data + ML riskResult
+│   └── HouseAssignment.js      ← ML clustering assignments
+├── routes/
+│   ├── auth.js                 ← Rate-limited auth routes
+│   ├── student.js              ← Protected GET houses
+│   ├── visit.js                ← Protected POST verify
+│   ├── patient.js              ← Protected POST record
+│   └── admin.js                ← Admin-only POST routes
+├── services/
+│   └── mlService.js            ← Axios ML client (detectRisk, clusterHouses)
+├── .env.example                ← Environment variable template
+├── .gitignore
+├── package.json
+└── server.js                   ← Entry point with all security middleware
+```
+
+---
+
+## API Routes
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| POST | `/api/auth/register` | None | Register student |
+| POST | `/api/auth/login` | None | Login → returns JWT |
+| GET | `/api/student/houses/:studentId` | JWT | Get assigned houses |
+| POST | `/api/visit/verify` | JWT | GPS distance check (< 30m) |
+| POST | `/api/patient/record` | JWT | Submit patient data → ML → DB |
+| POST | `/api/admin/upload-students` | JWT + Admin | Bulk upload students |
+| POST | `/api/admin/upload-houses` | JWT + Admin | Bulk upload houses |
+| POST | `/api/admin/run-clustering` | JWT + Admin | ML clustering → store assignments |
+
+---
+
+## Security Implemented
+
+- **bcrypt** password hashing (pre-save hook on User model)
+- **JWT** on all protected routes via [middleware/auth.js](file:///c:/Users/jdbha/Downloads/village-health-system/backend/middleware/auth.js)
+- **helmet** for HTTP security headers
+- **CORS** restricted to `ALLOWED_ORIGINS` env variable
+- **express-rate-limit** (10 requests / 15min) on auth endpoints
+- **express-mongo-sanitize** to prevent NoSQL injection
+- **bodyParser limit** set to 10KB
+- **Multer** validates file type (jpeg/png/webp) and size (max 5MB)
+- Passwords never returned in any API response (`select: false`)
+- All secrets stored in `.env` (never hardcoded)
+
+---
+
+## ML Integration
+
+[mlService.js](file:///c:/Users/jdbha/Downloads/village-health-system/backend/services/mlService.js) uses an Axios client pre-configured with `ML_API_URL` from `.env`:
+
+- [detectRisk(patientData)](file:///c:/Users/jdbha/Downloads/village-health-system/backend/services/mlService.js#9-18) → `POST /api/v1/risk-detection`
+- [clusterHouses(houses)](file:///c:/Users/jdbha/Downloads/village-health-system/backend/services/mlService.js#19-28) → `POST /api/v1/cluster-houses`
+
+If the ML service is unavailable, patient records are saved gracefully without a risk result.
+
+---
+
+## Frontend Update
+
+[constants.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/utils/constants.dart) updated:
+- `baseUrl` changed to `http://10.0.2.2:3000/api` (Android emulator localhost)
+- Added `registerEndpoint` and `visitVerifyEndpoint`
+
+---
+
+## Getting Started
+
+1. Copy [.env.example](file:///c:/Users/jdbha/Downloads/village-health-system/backend/.env.example) to `.env` and fill in your values
+2. Run `npm install` in the `backend/` directory
+3. Run `npm run dev` to start (or `npm start` for production)
