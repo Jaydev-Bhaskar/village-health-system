@@ -12,7 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_maps_flutter: ^2.5.3
-  geolocator: ^10.3.2
+  geolocator: 14.0.2
   camera: ^0.10.5+9
   http: ^1.2.0
   flutter_secure_storage: ^9.0.0

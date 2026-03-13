@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/house.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import 'login_screen.dart';
 import 'visit_verification_screen.dart';
 
 class MapScreen extends StatefulWidget {
@@ -49,9 +50,20 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error fetching houses: \${e.toString()}')),
-        );
+        if (e is UnauthorizedException) {
+          await _authService.clearAuthData();
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Session expired. Please log in again.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error fetching houses: ${e.toString()}')),
+          );
+        }
       }
     }
   }
@@ -76,7 +88,7 @@ class _MapScreenState extends State<MapScreen> {
         markerId: MarkerId(house.id),
         position: LatLng(house.latitude, house.longitude),
         icon: BitmapDescriptor.defaultMarkerWithHue(hue),
-        infoWindow: InfoWindow(title: house.address, snippet: 'Risk: \${house.riskLevel}'),
+        infoWindow: InfoWindow(title: house.address, snippet: 'Risk: ${house.riskLevel}'),
         onTap: () {
           Navigator.push(
             context,
@@ -92,15 +104,36 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Assigned Houses'),
+        title: const Text(
+          'Assigned Houses',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Colors.green.shade800.withOpacity(0.9),
+        foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh Houses',
+            onPressed: () {
+              setState(() {
+                _isLoading = true;
+              });
+              _fetchHouses();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
             onPressed: () async {
               await _authService.clearAuthData();
               if (mounted) {
-                 Navigator.of(context).popUntil((route) => route.isFirst);
+                 Navigator.pushReplacement(
+                   context,
+                   MaterialPageRoute(builder: (_) => const LoginScreen()),
+                 );
               }
             },
           )
@@ -118,7 +151,21 @@ class _MapScreenState extends State<MapScreen> {
               markers: _markers,
               myLocationEnabled: true,
               myLocationButtonEnabled: true,
+              mapToolbarEnabled: false,
+              zoomControlsEnabled: false,
             ),
+      floatingActionButton: _isLoading ? null : FloatingActionButton(
+        onPressed: () {
+             setState(() {
+                _isLoading = true;
+              });
+              _fetchHouses();
+        },
+        backgroundColor: Colors.green.shade700,
+        child: const Icon(Icons.my_location, color: Colors.white),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );
   }
 }
+

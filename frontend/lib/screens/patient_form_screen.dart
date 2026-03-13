@@ -4,6 +4,7 @@ import '../models/house.dart';
 import '../models/patient_record.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import 'login_screen.dart';
 
 class PatientFormScreen extends StatefulWidget {
   final House house;
@@ -61,9 +62,21 @@ class _PatientFormScreenState extends State<PatientFormScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission Error: \${e.toString()}')),
-        );
+        if (e is UnauthorizedException) {
+          await _authService.clearAuthData();
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Session expired. Please log in again.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Submission Error: ${e.toString().replaceAll('Exception: ', '')}')),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -84,47 +97,82 @@ class _PatientFormScreenState extends State<PatientFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Patient Health Form')),
+      backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        title: const Text('Patient Health Form'),
+        elevation: 0,
+        backgroundColor: Colors.green.shade700,
+        foregroundColor: Colors.white,
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (widget.selfiePath.isNotEmpty)
-                   SizedBox(
-                     height: 100,
-                     child: Image.file(File(widget.selfiePath), fit: BoxFit.contain),
+                   Center(
+                     child: Container(
+                       height: 120,
+                       width: 120,
+                       decoration: BoxDecoration(
+                         shape: BoxShape.circle,
+                         border: Border.all(color: Colors.green.shade300, width: 4),
+                         image: DecorationImage(
+                           image: FileImage(File(widget.selfiePath)),
+                           fit: BoxFit.cover,
+                         ),
+                       ),
+                     ),
                    ),
-                const SizedBox(height: 16),
-                Text(
-                  'House: \${widget.house.address}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                const SizedBox(height: 24),
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.house, color: Colors.green.shade600),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.house.address,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
+                const SizedBox(height: 24),
+                _buildTextField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Patient Name', border: OutlineInputBorder()),
+                  label: 'Patient Name',
+                  icon: Icons.person_outline,
                   validator: (value) => value == null || value.isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
+                _buildTextField(
                   controller: _diseaseController,
-                  decoration: const InputDecoration(labelText: 'Disease / Symptoms', border: OutlineInputBorder()),
+                  label: 'Disease / Symptoms',
+                  icon: Icons.sick_outlined,
                   validator: (value) => value == null || value.isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
+                _buildTextField(
                   controller: _bpController,
-                  decoration: const InputDecoration(labelText: 'Blood Pressure (e.g., 120/80)', border: OutlineInputBorder()),
+                  label: 'Blood Pressure (e.g., 120/80)',
+                  icon: Icons.favorite_border,
                   validator: (value) => value == null || value.isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
+                _buildTextField(
                   controller: _notesController,
-                  decoration: const InputDecoration(labelText: 'Additional Notes', border: OutlineInputBorder()),
+                  label: 'Additional Notes',
+                  icon: Icons.note_alt_outlined,
                   maxLines: 4,
                 ),
                 const SizedBox(height: 32),
@@ -133,9 +181,15 @@ class _PatientFormScreenState extends State<PatientFormScreen> {
                     : ElevatedButton(
                         onPressed: _submitForm,
                         style: ElevatedButton.styleFrom(
+                           backgroundColor: Colors.green.shade700,
+                           foregroundColor: Colors.white,
                            padding: const EdgeInsets.symmetric(vertical: 16),
+                           shape: RoundedRectangleBorder(
+                             borderRadius: BorderRadius.circular(12),
+                           ),
+                           elevation: 3,
                         ),
-                        child: const Text('Submit Record'),
+                        child: const Text('Submit Record', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
               ],
             ),
@@ -144,4 +198,28 @@ class _PatientFormScreenState extends State<PatientFormScreen> {
       ),
     );
   }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: maxLines == 1 ? Icon(icon) : Padding(padding: const EdgeInsets.only(bottom: 50.0), child: Icon(icon)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        filled: true,
+        fillColor: Colors.white,
+      ),
+      validator: validator,
+    );
+  }
 }
+

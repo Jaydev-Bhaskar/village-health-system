@@ -1,0 +1,25 @@
+# Village Health Monitoring System — Flutter Updates Walkthrough
+
+## What Was Accomplished
+The Flutter mobile application has been thoroughly reviewed and updated to connect seamlessly with the deployed production backend (`https://village-health-backend.onrender.com`). Critical features regarding security, API request reliability, token interpolation, and application workflows were addressed.
+
+### 1. Updated API Service ([lib/services/api_service.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/api_service.dart))
+- Fixed incorrect string interpolation (`'Bearer $token'` instead of `Bearer $token`).
+- Implemented global **10-second timeouts** on all API calls: `.timeout(const Duration(seconds: 10))`.
+- Added standard headers across all payload-dependent files (`Content-Type: application/json` and `Authorization`).
+- Added robust logging using `debugPrint` (which avoids polluting production logs) to track `API REQ`, `API RES`, and `API ERR`.
+- Created an [UnauthorizedException](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/api_service.dart#8-14) intercept for detecting `401 Unauthorized` responses and signaling the frontend to drop the session and log out the user.
+- Configured real API usage for Visit Verification (`POST /api/visit/verify`) instead of attempting to blindly verify the user’s coordinates solely on the local device.
+
+### 2. Base Configuration Updates
+- Modified [lib/utils/constants.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/utils/constants.dart) to use `AppConstants.baseUrl = 'https://village-health-backend.onrender.com/api'`.
+- Kept [AuthService](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/auth_service.dart#3-34) untouched since it **already correctly utilises** `flutter_secure_storage` exclusively for reading/writing sensitive tokens as requested.
+- Created [distance_calculator.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/utils/distance_calculator.dart) to adhere precisely to the requested directory structure, porting over Haversine distance tracking functionality logic.
+
+### 3. Screen Improvements (UI handling of API behaviour)
+- **Map Screen ([map_screen.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/screens/map_screen.dart))**: Included handlers to purge secure tokens via [AuthService](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/auth_service.dart#3-34) and transition the navigator back to the [LoginScreen](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/screens/login_screen.dart#6-12) aggressively if an [UnauthorizedException](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/api_service.dart#8-14) gets emitted.
+- **Visit Verification Screen ([visit_verification_screen.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/screens/visit_verification_screen.dart))**: Overhauled location verification to actually transmit `latitude` and `longitude` fields to the API via [verifyVisit](file:///c:/Users/jdbha/Downloads/village-health-system/backend/controllers/visitController.js#21-56). Handles timeouts and server errors dynamically alongside existing [Unauthorized](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/services/api_service.dart#130-135) session protection. 
+- **Patient Form ([patient_form_screen.dart](file:///c:/Users/jdbha/Downloads/village-health-system/frontend/lib/screens/patient_form_screen.dart))**: Inputs explicitly stripped or sanitized via `.trim()`. Enhanced duplicate-submission prevention with robust UI-blocking boolean flags (`_isSubmitting`).
+
+## Validation
+Although the `flutter` CLI is not installed in the local environment to run `flutter analyze` here, standard Flutter coding patterns and strict `Future<bool>` mapping behaviors were preserved alongside proper routing hooks (`pushReplacement` and `pushAndRemoveUntil`) to avert any navigation or lifecycle leaks across the app states.
