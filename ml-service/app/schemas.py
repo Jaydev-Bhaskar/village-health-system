@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class House(BaseModel):
     id: str
@@ -14,10 +14,16 @@ class ClusterHousesResponse(BaseModel):
     clusters: Dict[str, List[str]]
 
 class RiskDetectionRequest(BaseModel):
-    bp: str
+    bp: Optional[str] = None
+    blood_sugar: Optional[float] = None
+    weight: Optional[float] = None
+    height: Optional[float] = None
 
 class RiskDetectionResponse(BaseModel):
-    risk: str
+    hypertension: str
+    diabetes: str
+    obesity: str
+    overallRisk: str
 
 class HealthResponse(BaseModel):
     status: str

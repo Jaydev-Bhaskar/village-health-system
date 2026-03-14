@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
-import '../services/auth_service.dart';
-import 'map_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -13,161 +13,170 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _apiService = ApiService();
-  final _authService = AuthService();
-  bool _isLoading = false;
+  bool _obscurePassword = true;
+  String? _errorMessage;
 
-  void _login() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter email and password')),
-      );
-      return;
-    }
+  Future<void> _handleLogin() async {
+    setState(() => _errorMessage = null);
 
-    setState(() => _isLoading = true);
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final success = await auth.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
 
-    try {
-      final response = await _apiService.login(email, password);
-      final token = response['token'];
-      final studentId = response['studentId'] ?? response['user']['id'];
+    if (!mounted) return;
 
-      if (token != null) {
-        await _authService.saveToken(token);
-        if (studentId != null) {
-          await _authService.saveStudentId(studentId.toString());
-        }
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MapScreen()),
-          );
-        }
+    if (success) {
+      if (auth.isAdmin) {
+        Navigator.pushReplacementNamed(context, '/admin/dashboard');
       } else {
-        throw Exception('Token not found in response');
+        Navigator.pushReplacementNamed(context, '/student/dashboard');
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: ${e.toString()}')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+    } else {
+      setState(() => _errorMessage = 'Invalid email or password');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context);
+
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.green.shade800, Colors.green.shade400],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 12,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
+      backgroundColor: AppTheme.clinicalWhite,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Medical Logo
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppTheme.lightBlueTint,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.local_hospital,
+                    size: 48,
+                    color: AppTheme.primaryBlue,
+                  ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(32.0),
+                const SizedBox(height: 24),
+
+                // App Title
+                const Text(
+                  'Village Health\nMonitoring System',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.charcoalText,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Medical Field Visit Portal',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.mutedGrey,
+                  ),
+                ),
+                const SizedBox(height: 40),
+
+                // Login Card
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppTheme.softGrey,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(13),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.health_and_safety,
-                        size: 80,
-                        color: Colors.green.shade700,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Village Health',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green.shade800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Student Login',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 40),
+                      // Email Field
                       TextField(
                         controller: _emailController,
-                        decoration: InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                        ),
                         keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email Address',
+                          prefixIcon: Icon(Icons.email_outlined),
+                        ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
+
+                      // Password Field
                       TextField(
                         controller: _passwordController,
+                        obscureText: _obscurePassword,
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                            ),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
                         ),
-                        obscureText: true,
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 12),
+
+                      // Error Message
+                      if (_errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: AppTheme.alertRed, fontSize: 14),
+                          ),
+                        ),
+
+                      // Login Button
                       SizedBox(
                         width: double.infinity,
-                        height: 50,
-                        child: _isLoading
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton(
-                                onPressed: _login,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green.shade700,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: auth.isLoading ? null : _handleLogin,
+                          child: auth.isLoading
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
                                   ),
-                                  elevation: 4,
-                                ),
-                                child: const Text(
-                                  'Login',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
+                                )
+                              : const Text('Login', style: TextStyle(fontSize: 16)),
+                        ),
                       ),
-                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
-              ),
+
+                const SizedBox(height: 32),
+                const Text(
+                  'Powered by Medical College',
+                  style: TextStyle(fontSize: 12, color: AppTheme.mutedGrey),
+                ),
+              ],
             ),
           ),
         ),

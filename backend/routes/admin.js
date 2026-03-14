@@ -1,5 +1,7 @@
 const express = require('express');
 const {
+  getAdminDashboard,
+  getAnalytics,
   uploadStudents,
   uploadHouses,
   runClustering,
@@ -8,8 +10,10 @@ const { protect, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(protect, adminOnly); // all admin routes require auth + admin role
+router.use(protect, adminOnly);
 
+router.get('/dashboard', getAdminDashboard);
+router.get('/analytics', getAnalytics);
 router.post('/upload-students', uploadStudents);
 router.post('/upload-houses', uploadHouses);
 router.post('/run-clustering', runClustering);

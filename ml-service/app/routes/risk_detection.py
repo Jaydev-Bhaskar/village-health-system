@@ -7,10 +7,10 @@ router = APIRouter()
 
 @router.post("/risk-detection", response_model=RiskDetectionResponse)
 async def risk_detection(request: RiskDetectionRequest):
-    logger.info(f"Received risk detection request for BP: {request.bp}")
+    logger.info(f"Received risk detection request")
     try:
-        risk = determine_risk(request.bp)
-        return RiskDetectionResponse(risk=risk)
+        risk_data = determine_risk(request)
+        return RiskDetectionResponse(**risk_data)
     except ValueError as ve:
         logger.warning(f"Validation error in risk detection: {ve}")
         raise HTTPException(status_code=400, detail=str(ve))

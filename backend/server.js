@@ -13,6 +13,7 @@ const studentRoutes = require('./routes/student');
 const visitRoutes = require('./routes/visit');
 const patientRoutes = require('./routes/patient');
 const adminRoutes = require('./routes/admin');
+const notificationRoutes = require('./routes/notification');
 
 // Connect to MongoDB
 connectDB();
@@ -64,6 +65,7 @@ app.use('/api/student', studentRoutes);
 app.use('/api/visit', visitRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));

@@ -1,32 +1,62 @@
 import 'package:flutter/material.dart';
-import 'services/auth_service.dart';
+import 'package:provider/provider.dart';
+import 'theme/app_theme.dart';
+import 'services/notification_service.dart';
 import 'screens/login_screen.dart';
-import 'screens/map_screen.dart';
+import 'screens/student/student_dashboard.dart';
+import 'screens/student/map_screen.dart';
+import 'screens/student/visit_verification_screen.dart';
+import 'screens/student/patient_form_screen.dart';
+import 'screens/student/visit_history_screen.dart';
+import 'screens/admin/admin_dashboard.dart';
+import 'screens/admin/upload_students_screen.dart';
+import 'screens/admin/upload_houses_screen.dart';
+import 'screens/admin/clustering_screen.dart';
+import 'screens/admin/analytics_screen.dart';
+import 'screens/notifications/notification_settings_screen.dart';
+import 'providers/auth_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  final authService = AuthService();
-  final isLoggedIn = await authService.isLoggedIn();
+  await LocalNotificationService.initialize();
 
-  runApp(VillageHealthApp(isLoggedIn: isLoggedIn));
+  final authProvider = AuthProvider();
+  await authProvider.tryAutoLogin();
+
+  runApp(VillageHealthApp(authProvider: authProvider));
 }
 
 class VillageHealthApp extends StatelessWidget {
-  final bool isLoggedIn;
-
-  const VillageHealthApp({Key? key, required this.isLoggedIn}) : super(key: key);
+  final AuthProvider authProvider;
+  
+  const VillageHealthApp({super.key, required this.authProvider});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Village Health Monitoring',
-      theme: ThemeData(
-        primarySwatch: Colors.green,
-        useMaterial3: true,
+    return ChangeNotifierProvider.value(
+      value: authProvider,
+      child: MaterialApp(
+        title: 'Village Health Monitoring System',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        initialRoute: authProvider.isAuthenticated 
+            ? (authProvider.isAdmin ? '/admin/dashboard' : '/student/dashboard') 
+            : '/login',
+        routes: {
+          '/login': (_) => const LoginScreen(),
+          '/student/dashboard': (_) => const StudentDashboard(),
+          '/student/map': (_) => const MapScreen(),
+          '/student/verify': (_) => const VisitVerificationScreen(),
+          '/student/patient-form': (_) => const PatientFormScreen(),
+          '/student/history': (_) => const VisitHistoryScreen(),
+          '/admin/dashboard': (_) => const AdminDashboard(),
+          '/admin/upload-students': (_) => const UploadStudentsScreen(),
+          '/admin/upload-houses': (_) => const UploadHousesScreen(),
+          '/admin/clustering': (_) => const ClusteringScreen(),
+          '/admin/analytics': (_) => const AnalyticsScreen(),
+          '/notifications/settings': (_) => const NotificationSettingsScreen(),
+        },
       ),
-      home: isLoggedIn ? const MapScreen() : const LoginScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }

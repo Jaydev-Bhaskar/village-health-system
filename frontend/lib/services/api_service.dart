@@ -1,144 +1,250 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import '../utils/constants.dart';
-import '../models/house.dart';
-import '../models/patient_record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class UnauthorizedException implements Exception {
+/// Custom exception for API errors
+class ApiException implements Exception {
   final String message;
-  UnauthorizedException([this.message = 'Unauthorized']);
+  final int? statusCode;
+  ApiException(this.message, {this.statusCode});
+
   @override
   String toString() => message;
 }
 
+/// Central API service for all backend communication.
 class ApiService {
-  static const int _timeoutSeconds = 10;
+  // Update with your backend URL
+  // static const String baseUrl = 'http://10.0.2.2:3000/api'; // Android emulator
+  // static const String baseUrl = 'http://localhost:3000/api'; // iOS simulator
+  static const String baseUrl = 'https://village-health-backend.onrender.com/api'; // Production
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
-    try {
-      if (kDebugMode) debugPrint('API REQ: POST ${AppConstants.loginEndpoint}');
-      
-      final response = await http.post(
-        Uri.parse(AppConstants.loginEndpoint),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email, 'password': password}),
-      ).timeout(const Duration(seconds: _timeoutSeconds));
+  static const Duration _timeout = Duration(seconds: 15);
 
-      if (kDebugMode) debugPrint('API RES: ${response.statusCode}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Login failed: ${_parseError(response.body)}');
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('API ERR: $e');
-      throw Exception('Network/Login Error: $e');
-    }
+  static Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
   }
 
-  Future<List<House>> getAssignedHouses(String studentId, String token) async {
-    try {
-      final url = AppConstants.studentHousesEndpoint(studentId);
-      if (kDebugMode) debugPrint('API REQ: GET $url');
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: _timeoutSeconds));
-
-      if (kDebugMode) debugPrint('API RES: ${response.statusCode}');
-
-      _checkUnauthorized(response.statusCode);
-
-      if (response.statusCode == 200) {
-        Iterable list = jsonDecode(response.body);
-        return list.map((model) => House.fromJson(model)).toList();
-      } else {
-        throw Exception('Failed to load houses: ${_parseError(response.body)}');
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('API ERR: $e');
-      if (e is UnauthorizedException) rethrow;
-      throw Exception('Network error fetching houses');
-    }
+  static Future<Map<String, String>> _headers() async {
+    final token = await _getToken();
+    return {
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
   }
 
-  Future<bool> verifyVisit(String houseId, double lat, double lng, String token) async {
-    try {
-      if (kDebugMode) debugPrint('API REQ: POST ${AppConstants.visitVerifyEndpoint}');
-
-      final response = await http.post(
-        Uri.parse(AppConstants.visitVerifyEndpoint),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'houseId': houseId,
-          'latitude': lat,
-          'longitude': lng,
-        }),
-      ).timeout(const Duration(seconds: _timeoutSeconds));
-
-      if (kDebugMode) debugPrint('API RES: ${response.statusCode}');
-
-      _checkUnauthorized(response.statusCode);
-
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        final errorMsg = _parseError(response.body);
-        throw Exception(errorMsg.isNotEmpty ? errorMsg : 'Verification failed');
-      }
-    } catch (e) {
-      if (kDebugMode) debugPrint('API ERR: $e');
-      if (e is UnauthorizedException) rethrow;
-      throw Exception('$e');
-    }
-  }
-
-  Future<bool> submitPatientRecord(PatientRecord record, String token) async {
-    try {
-      if (kDebugMode) debugPrint('API REQ: POST ${AppConstants.patientRecordEndpoint}');
-
-      final response = await http.post(
-        Uri.parse(AppConstants.patientRecordEndpoint),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(record.toJson()),
-      ).timeout(const Duration(seconds: _timeoutSeconds));
-
-      if (kDebugMode) debugPrint('API RES: ${response.statusCode}');
-
-      _checkUnauthorized(response.statusCode);
-
-      return response.statusCode == 200 || response.statusCode == 201;
-    } catch (e) {
-      if (kDebugMode) debugPrint('API ERR: $e');
-      if (e is UnauthorizedException) rethrow;
-      throw Exception('Failed to submit record: $e');
-    }
-  }
-
-  void _checkUnauthorized(int statusCode) {
-    if (statusCode == 401 || statusCode == 403) {
-      throw UnauthorizedException('Session expired. Please log in again.');
-    }
-  }
-
-  String _parseError(String body) {
-    try {
-      final json = jsonDecode(body);
-      return json['message'] ?? 'Unknown error';
-    } catch (_) {
+  /// Generic response handler with error extraction
+  static dynamic _handleResponse(http.Response response) {
+    final body = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;
     }
+    throw ApiException(
+      body['message'] ?? 'Request failed',
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// Safe GET request with timeout and error handling
+  static Future<dynamic> _get(String path) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl$path'), headers: await _headers())
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException('No internet connection');
+    } on HttpException {
+      throw ApiException('Server unreachable');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: ${e.toString()}');
+    }
+  }
+
+  /// Safe POST request with timeout and error handling
+  static Future<dynamic> _post(String path, Map<String, dynamic> body) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl$path'),
+            headers: await _headers(),
+            body: jsonEncode(body),
+          )
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException('No internet connection');
+    } on HttpException {
+      throw ApiException('Server unreachable');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: ${e.toString()}');
+    }
+  }
+
+  /// Safe PATCH request
+  static Future<dynamic> _patch(String path, [Map<String, dynamic>? body]) async {
+    try {
+      final response = await http
+          .patch(
+            Uri.parse('$baseUrl$path'),
+            headers: await _headers(),
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException('No internet connection');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: ${e.toString()}');
+    }
+  }
+
+  /// Safe PUT request
+  static Future<dynamic> _put(String path, Map<String, dynamic> body) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$baseUrl$path'),
+            headers: await _headers(),
+            body: jsonEncode(body),
+          )
+          .timeout(_timeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException('No internet connection');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error: ${e.toString()}');
+    }
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> login(String email, String password) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/auth/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email, 'password': password}),
+          )
+          .timeout(_timeout);
+      return jsonDecode(response.body);
+    } catch (e) {
+      debugPrint('Login error: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  // ── Student ───────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getDashboard() async {
+    return await _get('/student/dashboard');
+  }
+
+  static Future<Map<String, dynamic>> getAssignedHouses() async {
+    return await _get('/student/houses');
+  }
+
+  static Future<Map<String, dynamic>> getVisitHistory({
+    int page = 1,
+    int limit = 20,
+    String? period,
+    String? risk,
+  }) async {
+    String query = '?page=$page&limit=$limit';
+    if (period != null) query += '&period=$period';
+    if (risk != null) query += '&risk=$risk';
+    return await _get('/student/visit-history$query');
+  }
+
+  // ── Visit ─────────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> verifyVisit(
+      String houseId, double lat, double lng) async {
+    return await _post('/visit/verify', {
+      'houseId': houseId,
+      'latitude': lat,
+      'longitude': lng,
+    });
+  }
+
+  // ── Patient Record ────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> submitPatientRecord(
+      Map<String, dynamic> data, String houseId) async {
+    return await _post('/patient/record', {
+      'houseId': houseId,
+      ...data,
+    });
+  }
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getNotifications({
+    int page = 1,
+    int limit = 20,
+    String? channel,
+    String? type,
+  }) async {
+    String query = '?page=$page&limit=$limit';
+    if (channel != null) query += '&channel=$channel';
+    if (type != null) query += '&type=$type';
+    return await _get('/notifications$query');
+  }
+
+  static Future<Map<String, dynamic>> getUnreadCount() async {
+    return await _get('/notifications/unread-count');
+  }
+
+  static Future<void> markNotificationRead(String id) async {
+    await _patch('/notifications/$id/read');
+  }
+
+  static Future<void> markAllNotificationsRead() async {
+    await _patch('/notifications/read-all');
+  }
+
+  static Future<Map<String, dynamic>> getNotificationPreferences() async {
+    return await _get('/notifications/preferences');
+  }
+
+  static Future<Map<String, dynamic>> updateNotificationPreferences(
+      Map<String, dynamic> prefs) async {
+    return await _put('/notifications/preferences', prefs);
+  }
+
+  // ── Admin ─────────────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>> getAdminDashboard() async {
+    return await _get('/admin/dashboard');
+  }
+
+  static Future<Map<String, dynamic>> getAnalytics({String period = 'month'}) async {
+    return await _get('/admin/analytics?period=$period');
+  }
+
+  static Future<Map<String, dynamic>> uploadStudents(List<Map<String, dynamic>> students) async {
+    return await _post('/admin/upload-students', {'students': students});
+  }
+
+  static Future<Map<String, dynamic>> uploadHouses(List<Map<String, dynamic>> houses) async {
+    return await _post('/admin/upload-houses', {'houses': houses});
+  }
+
+  static Future<Map<String, dynamic>> runClustering({
+    int maxHouses = 8,
+    double maxDistance = 2.0,
+  }) async {
+    return await _post('/admin/run-clustering', {
+      'maxHouses': maxHouses,
+      'maxDistance': maxDistance,
+    });
   }
 }
