@@ -314,6 +314,7 @@ class AnalyticsData {
   final Map<String, int> ncdDistribution;
   final Map<String, RiskStat> riskDistribution;
   final Map<String, int> bmiDistribution;
+  final List<AnalyticsHouse> houses;
 
   AnalyticsData({
     required this.totalVisits,
@@ -321,17 +322,37 @@ class AnalyticsData {
     required this.ncdDistribution,
     required this.riskDistribution,
     required this.bmiDistribution,
+    required this.houses,
   });
 
   factory AnalyticsData.fromJson(Map<String, dynamic> json) {
     final data = json['data'] ?? json;
-    final ncd = Map<String, int>.from(data['ncdDistribution'] ?? {});
-    final bmi = Map<String, int>.from(data['bmiDistribution'] ?? {});
+    
+    // Safe int map parsing (handles both int and double from JSON)
+    final ncdRaw = data['ncdDistribution'] as Map<String, dynamic>? ?? {};
+    final ncd = ncdRaw.map((k, v) => MapEntry(k, (v is num) ? v.toInt() : 0));
+    
+    final bmiRaw = data['bmiDistribution'] as Map<String, dynamic>? ?? {};
+    final bmi = bmiRaw.map((k, v) => MapEntry(k, (v is num) ? v.toInt() : 0));
+    
+    // Safe risk distribution parsing
     final riskRaw = data['riskDistribution'] as Map<String, dynamic>? ?? {};
-    final risk = riskRaw.map((k, v) => MapEntry(k, RiskStat.fromJson(v)));
+    final risk = <String, RiskStat>{};
+    riskRaw.forEach((k, v) {
+      if (v is Map<String, dynamic>) {
+        risk[k] = RiskStat.fromJson(v);
+      } else {
+        risk[k] = RiskStat(count: 0, percentage: 0);
+      }
+    });
+
+    // Parse houses
+    final housesList = (data['houses'] as List? ?? [])
+        .map((h) => AnalyticsHouse.fromJson(h as Map<String, dynamic>))
+        .toList();
 
     return AnalyticsData(
-      totalVisits: data['totalVisits'] ?? 0,
+      totalVisits: (data['totalVisits'] is num) ? (data['totalVisits'] as num).toInt() : 0,
       dailyVisits: (data['dailyVisits'] as List?)
               ?.map((d) => DailyVisit.fromJson(d))
               .toList() ??
@@ -339,6 +360,33 @@ class AnalyticsData {
       ncdDistribution: ncd,
       riskDistribution: risk,
       bmiDistribution: bmi,
+      houses: housesList,
+    );
+  }
+}
+
+class AnalyticsHouse {
+  final String id;
+  final String address;
+  final double latitude;
+  final double longitude;
+  final String riskLevel;
+
+  AnalyticsHouse({
+    required this.id,
+    required this.address,
+    required this.latitude,
+    required this.longitude,
+    required this.riskLevel,
+  });
+
+  factory AnalyticsHouse.fromJson(Map<String, dynamic> json) {
+    return AnalyticsHouse(
+      id: json['id']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
+      latitude: (json['latitude'] is num) ? (json['latitude'] as num).toDouble() : 0.0,
+      longitude: (json['longitude'] is num) ? (json['longitude'] as num).toDouble() : 0.0,
+      riskLevel: json['riskLevel']?.toString() ?? 'LOW',
     );
   }
 }
@@ -349,7 +397,10 @@ class DailyVisit {
   DailyVisit({required this.date, required this.count});
 
   factory DailyVisit.fromJson(Map<String, dynamic> json) {
-    return DailyVisit(date: json['date'] ?? '', count: json['count'] ?? 0);
+    return DailyVisit(
+      date: json['date'] ?? '',
+      count: (json['count'] is num) ? (json['count'] as num).toInt() : 0,
+    );
   }
 }
 
@@ -359,6 +410,9 @@ class RiskStat {
   RiskStat({required this.count, required this.percentage});
 
   factory RiskStat.fromJson(Map<String, dynamic> json) {
-    return RiskStat(count: json['count'] ?? 0, percentage: json['percentage'] ?? 0);
+    return RiskStat(
+      count: (json['count'] is num) ? (json['count'] as num).toInt() : 0,
+      percentage: (json['percentage'] is num) ? (json['percentage'] as num).toInt() : 0,
+    );
   }
 }

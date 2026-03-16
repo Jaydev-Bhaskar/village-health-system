@@ -11,26 +11,31 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  final _idController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _idController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
+    final id = _idController.text.trim();
+    final password = _passwordController.text;
+
+    if (id.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Please enter your ID and password');
+      return;
+    }
+
     setState(() => _errorMessage = null);
 
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    final success = await auth.login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+    final success = await auth.login(id, password);
 
     if (!mounted) return;
 
@@ -41,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/student/dashboard');
       }
     } else {
-      setState(() => _errorMessage = 'Invalid email or password');
+      setState(() => _errorMessage = 'Invalid ID or password');
     }
   }
 
@@ -58,28 +63,24 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Medical Logo
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: AppTheme.lightBlueTint,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(
-                    Icons.local_hospital,
-                    size: 48,
-                    color: AppTheme.primaryBlue,
+                // App Logo
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    'assets/app_logo.png',
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
                   ),
                 ),
                 const SizedBox(height: 24),
 
                 // App Title
                 const Text(
-                  'Village Health\nMonitoring System',
+                  'MedNova',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 24,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.charcoalText,
                     height: 1.3,
@@ -87,7 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Medical Field Visit Portal',
+                  'Village Health Monitoring',
                   style: TextStyle(
                     fontSize: 14,
                     color: AppTheme.mutedGrey,
@@ -111,13 +112,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   child: Column(
                     children: [
-                      // Email Field
+                      // ID Field (Student ID or Email)
                       TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        controller: _idController,
+                        keyboardType: TextInputType.text,
+                        textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
-                          labelText: 'Email Address',
-                          prefixIcon: Icon(Icons.email_outlined),
+                          labelText: 'Student ID / Email',
+                          hintText: 'Enter your Student ID or Email',
+                          prefixIcon: Icon(Icons.person_outline),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -126,6 +129,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _handleLogin(),
                         decoration: InputDecoration(
                           labelText: 'Password',
                           prefixIcon: const Icon(Icons.lock_outline),
@@ -173,7 +178,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 32),
                 const Text(
-                  'Powered by Medical College',
+                  'Powered by MedNova',
                   style: TextStyle(fontSize: 12, color: AppTheme.mutedGrey),
                 ),
               ],

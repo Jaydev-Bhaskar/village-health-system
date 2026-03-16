@@ -49,6 +49,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         actions: [
           IconButton(icon: const Icon(Icons.notifications),
             onPressed: () => Navigator.pushNamed(context, '/notifications/settings')),
+          IconButton(icon: const Icon(Icons.lock_outline),
+            onPressed: () => Navigator.pushNamed(context, '/change-password')),
           IconButton(icon: const Icon(Icons.logout), onPressed: () {
             auth.logout();
             Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
@@ -95,6 +97,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         _actionCard('Upload Houses', 'Import house coordinates', Icons.map, '/admin/upload-houses'),
         _actionCard('Run Clustering', 'Smart house assignment', Icons.auto_awesome, '/admin/clustering'),
         _actionCard('View Analytics', 'Health data analytics', Icons.bar_chart, '/admin/analytics'),
+        _actionCard('Student Details', 'View students & passwords', Icons.people_alt, '/admin/students'),
       ],
     );
   }

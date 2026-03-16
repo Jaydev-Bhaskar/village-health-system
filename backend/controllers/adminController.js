@@ -114,6 +114,9 @@ const getAnalytics = async (req, res) => {
       if (bmiDist[key] !== undefined) bmiDist[key] = b.count;
     }
 
+    // House locations for map
+    const houses = await House.find({}).select('address latitude longitude riskLevel').lean();
+
     res.status(200).json({
       success: true,
       data: {
@@ -126,6 +129,13 @@ const getAnalytics = async (req, res) => {
           high: { count: riskDistribution.high, percentage: Math.round((riskDistribution.high / riskTotal) * 100) },
         },
         bmiDistribution: bmiDist,
+        houses: houses.map((h) => ({
+          id: h._id,
+          address: h.address,
+          latitude: h.latitude,
+          longitude: h.longitude,
+          riskLevel: h.riskLevel || 'LOW',
+        })),
       },
     });
   } catch (err) {
@@ -135,6 +145,7 @@ const getAnalytics = async (req, res) => {
 };
 
 // POST /api/admin/upload-students
+// If studentId exists => skip, if not => create with password = studentId
 const uploadStudents = async (req, res) => {
   try {
     const students = req.body.students;
@@ -144,23 +155,82 @@ const uploadStudents = async (req, res) => {
 
     const results = [];
     for (const s of students) {
-      const exists = await User.findOne({ email: s.email });
-      if (!exists) {
-        const user = await User.create({
-          name: s.name,
-          email: s.email,
-          password: s.password || 'VillageHealth@123',
+      try {
+        // Check by studentId first
+        if (s.studentId) {
+          const existsByStudentId = await User.findOne({ studentId: s.studentId });
+          if (existsByStudentId) {
+            results.push({ studentId: s.studentId, name: existsByStudentId.name, created: false, reason: 'Student ID already exists' });
+            continue;
+          }
+        }
+
+        // Check by email if provided and non-empty
+        if (s.email && s.email.trim()) {
+          const existsByEmail = await User.findOne({ email: s.email.toLowerCase().trim() });
+          if (existsByEmail) {
+            results.push({ studentId: s.studentId, email: s.email, name: existsByEmail.name, created: false, reason: 'Email already exists' });
+            continue;
+          }
+        }
+
+        // Create new student - password defaults to studentId
+        const password = s.password || s.studentId || 'VillageHealth@123';
+        const userData = {
+          name: s.name || `Student ${s.studentId}`,
+          password: password,
           role: 'student',
+        };
+
+        // studentId is required for this flow
+        if (s.studentId) {
+          userData.studentId = s.studentId;
+        }
+
+        // Email is optional - only set if non-empty
+        if (s.email && s.email.trim()) {
+          userData.email = s.email.toLowerCase().trim();
+        }
+
+        const user = await User.create(userData);
+        results.push({
+          id: user._id,
+          studentId: user.studentId,
+          name: user.name,
+          password: password,
+          created: true,
         });
-        results.push({ id: user._id, email: user.email, created: true });
-      } else {
-        results.push({ id: exists._id, email: exists.email, created: false });
+      } catch (innerErr) {
+        // Handle duplicate key error for individual student
+        if (innerErr.code === 11000) {
+          const field = Object.keys(innerErr.keyPattern || {})[0] || 'unknown';
+          results.push({
+            studentId: s.studentId,
+            created: false,
+            reason: `Duplicate ${field}: already exists in database`,
+          });
+        } else {
+          results.push({
+            studentId: s.studentId,
+            created: false,
+            reason: innerErr.message || 'Creation failed',
+          });
+        }
       }
     }
 
-    res.status(201).json({ message: 'Students processed', results });
+    const created = results.filter(r => r.created).length;
+    const skipped = results.filter(r => !r.created).length;
+
+    res.status(201).json({
+      message: `Students processed: ${created} created, ${skipped} skipped`,
+      created,
+      skipped,
+      results,
+    });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to upload students' });
+    console.error('Upload students error:', err.message);
+    res.status(500).json({ message: 'Failed to upload students: ' + err.message });
   }
 };
 
@@ -175,6 +245,7 @@ const uploadHouses = async (req, res) => {
     const created = await House.insertMany(houses, { ordered: false });
     res.status(201).json({ message: 'Houses uploaded', count: created.length });
   } catch (err) {
+    console.error('Upload houses error:', err.message);
     res.status(500).json({ message: 'Failed to upload houses' });
   }
 };
@@ -188,45 +259,114 @@ const runClustering = async (req, res) => {
     if (houses.length === 0) {
       return res.status(400).json({ message: 'No houses found to cluster' });
     }
+    if (students.length === 0) {
+      return res.status(400).json({ message: 'No students found for assignment' });
+    }
 
-    const clusterResult = await clusterHouses(
-      houses.map((h) => ({
-        id: h._id,
-        latitude: h.latitude,
-        longitude: h.longitude,
-        riskLevel: h.riskLevel,
-      }))
-    );
+    // ML service expects: { students: int, houses: [{ id, lat, lng }] }
+    const mlHouses = houses.map((h) => ({
+      id: h._id.toString(),
+      lat: h.latitude,
+      lng: h.longitude,
+    }));
 
-    const assignments = clusterResult.assignments || [];
+    const clusterResult = await clusterHouses(students.length, mlHouses);
+
+    // ML returns: { clusters: { "0": ["houseId1", ...], "1": [...] } }
+    const clusters = clusterResult.clusters || {};
     await HouseAssignment.deleteMany({});
 
     const studentIds = students.map((s) => s._id);
     const saved = [];
 
-    for (const a of assignments) {
-      const studentIndex = a.clusterId % studentIds.length;
-      const studentId = studentIds[studentIndex];
+    // Assign each cluster's houses to a student
+    const clusterKeys = Object.keys(clusters);
+    for (let i = 0; i < clusterKeys.length; i++) {
+      const clusterId = parseInt(clusterKeys[i], 10);
+      const houseIds = clusters[clusterKeys[i]] || [];
+      const studentId = studentIds[i % studentIds.length];
 
-      await House.findByIdAndUpdate(a.houseId, { assignedStudentId: studentId });
+      for (const houseId of houseIds) {
+        await House.findByIdAndUpdate(houseId, { assignedStudentId: studentId });
 
-      const doc = await HouseAssignment.create({
-        houseId: a.houseId,
-        studentId,
-        clusterId: a.clusterId,
-      });
-      saved.push(doc);
+        const doc = await HouseAssignment.create({
+          houseId,
+          studentId,
+          clusterId,
+        });
+        saved.push(doc);
+      }
     }
 
     res.status(200).json({
       message: 'Clustering complete',
+      studentsAssigned: students.length,
+      housesAssigned: saved.length,
+      totalClusters: clusterKeys.length,
       assignments: saved.length,
       clusterResult,
     });
   } catch (err) {
     console.error('Clustering error:', err.message);
-    res.status(500).json({ message: 'Clustering failed' });
+    res.status(500).json({ message: 'Clustering failed: ' + err.message });
   }
 };
 
-module.exports = { getAdminDashboard, getAnalytics, uploadStudents, uploadHouses, runClustering };
+// GET /api/admin/students - Get all students with their passwords
+const getAllStudents = async (req, res) => {
+  try {
+    const students = await User.find({ role: 'student' })
+      .select('+plainPassword')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const studentData = students.map(s => ({
+      id: s._id,
+      name: s.name,
+      studentId: s.studentId || 'N/A',
+      email: s.email || 'N/A',
+      password: s.plainPassword || s.studentId || 'N/A',
+      createdAt: s.createdAt,
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: studentData.length,
+      data: studentData,
+    });
+  } catch (err) {
+    console.error('Get students error:', err.message);
+    res.status(500).json({ message: 'Failed to fetch students' });
+  }
+};
+
+// POST /api/admin/reset-password - Admin resets a student's password
+const resetStudentPassword = async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+    if (!userId || !newPassword) {
+      return res.status(400).json({ message: 'Please provide userId and newPassword' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password reset successfully' });
+  } catch (err) {
+    console.error('Reset password error:', err.message);
+    res.status(500).json({ message: 'Failed to reset password' });
+  }
+};
+
+module.exports = { 
+  getAdminDashboard, 
+  getAnalytics, 
+  uploadStudents, 
+  uploadHouses, 
+  runClustering, 
+  getAllStudents,
+  resetStudentPassword,
+};

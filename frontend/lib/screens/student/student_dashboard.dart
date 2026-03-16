@@ -86,6 +86,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ],
           ),
           IconButton(
+            icon: const Icon(Icons.lock_outline),
+            tooltip: 'Change Password',
+            onPressed: () => Navigator.pushNamed(context, '/change-password'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () {
               auth.logout();
@@ -113,6 +118,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
               break;
             case 2:
               Navigator.pushNamed(context, '/student/history');
+              break;
+            case 3:
+              Navigator.pushNamed(context, '/change-password');
               break;
           }
         },

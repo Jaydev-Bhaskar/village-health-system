@@ -21,7 +21,7 @@ class ApiService {
   // static const String baseUrl = 'http://localhost:3000/api'; // iOS simulator
   static const String baseUrl = 'https://village-health-backend.onrender.com/api'; // Production
 
-  static const Duration _timeout = Duration(seconds: 15);
+  static const Duration _timeout = Duration(seconds: 30);
 
   static Future<String?> _getToken() async {
     final prefs = await SharedPreferences.getInstance();
@@ -126,13 +126,17 @@ class ApiService {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>> login(String email, String password) async {
+  static Future<Map<String, dynamic>> login(String identifier, String password) async {
     try {
       final response = await http
           .post(
             Uri.parse('$baseUrl/auth/login'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': email, 'password': password}),
+            body: jsonEncode({
+              'identifier': identifier,
+              'email': identifier,  // backward compatibility with old backend
+              'password': password,
+            }),
           )
           .timeout(_timeout);
       return jsonDecode(response.body);
@@ -140,6 +144,13 @@ class ApiService {
       debugPrint('Login error: $e');
       return {'error': e.toString()};
     }
+  }
+
+  static Future<Map<String, dynamic>> changePassword(String currentPassword, String newPassword) async {
+    return await _post('/auth/change-password', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
   }
 
   // ── Student ───────────────────────────────────────────────────────────────
@@ -245,6 +256,17 @@ class ApiService {
     return await _post('/admin/run-clustering', {
       'maxHouses': maxHouses,
       'maxDistance': maxDistance,
+    });
+  }
+
+  static Future<Map<String, dynamic>> getAllStudents() async {
+    return await _get('/admin/students');
+  }
+
+  static Future<Map<String, dynamic>> resetStudentPassword(String userId, String newPassword) async {
+    return await _post('/admin/reset-password', {
+      'userId': userId,
+      'newPassword': newPassword,
     });
   }
 }
